@@ -13,6 +13,7 @@ import (
 	"time"
 	"crypto/tls"
 	"bufio"
+	"io/ioutil"
 )
 
 const PROGRAM_NAME = "netroute"
@@ -38,7 +39,6 @@ var (
 	}
 
 	remote net.Conn
-
 )
 
 
@@ -55,6 +55,10 @@ func main () {
 		ERROR.Println("missing arguments")
 		flag.Usage()
 		os.Exit(1)
+	}
+
+	if !*verbose {
+		log.SetOutput(ioutil.Discard)
 	}
 
 	host, port = flag.Arg(0), flag.Arg(1)
