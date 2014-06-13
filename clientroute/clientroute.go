@@ -1,15 +1,15 @@
 package clientroute
 
 import (
-	"io"
 	"net/rpc"
+	"bytes"
 )
 
 type ClientRoute struct{
-	io.WriteCloser
 	client *rpc.Client
 	key string
-	buf []byte
+
+	buf *bytes.Buffer
 }
 
 func NewClientRoute (client *rpc.Client, pattern string) (route *ClientRoute, err error) {
@@ -19,15 +19,26 @@ func NewClientRoute (client *rpc.Client, pattern string) (route *ClientRoute, er
 	if err != nil {
 		return nil, err
 	}
+
 	route.client = client	
+	route.buf = bytes.NewBuffer(nil)
+
 	return route, nil
 }
 
-//TODO: would be nicer if this satisfied io.Reader, but that isn't going
-//      to happen any time soon
-func (c *ClientRoute) Recv (p *[]byte) (n int, err error) {
-	err = c.client.Call("Routing.RecvFrom", c.key, &p)
-	n = len(p)
+func (c *ClientRoute) Read (p []byte) (n int, err error) {
+	if c.buf.Len() == 0 {
+		var buf []byte
+		err = c.client.Call("Routing.ReadFrom", c.key, &buf)
+		
+		if err != nil {
+			return
+		}
+
+		c.buf = bytes.NewBuffer(buf)
+	}
+
+	n, err = c.buf.Read(p)
 	return
 }
 
@@ -36,7 +47,6 @@ func (c *ClientRoute) Write (p []byte) (n int, err error) {
 	return
 }
 
-func (c *ClientRoute) Close () error {
-	err := c.client.Close()
-	return err
+func (c *ClientRoute) Close () (err error) {
+	return c.client.Call("Routing.RemoveRoute", c.key, &err)
 }

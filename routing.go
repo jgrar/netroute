@@ -5,8 +5,8 @@ import (
 
 	"regexp"
 	"fmt"
-	"sync"
 	"io"
+	"bufio"
 )
 
 var (
@@ -19,52 +19,34 @@ func init () {
 	routes <-make(map[string]*route, 1)
 }
 
-type route  struct {
-	sync.RWMutex
-	recv chan []byte
+type route struct {
+	in *bufio.Writer
+	out *io.PipeReader
+
 	re *regexp.Regexp
 }
 
 func newRoute () *route {
+	out, in := io.Pipe()
 	return &route{
-		recv: make(chan []byte, 1024),
+		out: out, in: bufio.NewWriter(in),
 	}
 }
 
-func (r *route) Recv () (msg []byte, err error) {
+func (r *route) Read (p []byte) (n int, err error) {
+	n, err = r.out.Read(p)
 
-	r.RLock()
-	defer func () {r.RUnlock()} ()
-
-	if len(r.recv) == 0 {
-		r.RUnlock()
-		msg = <-r.recv
-		r.RLock()
-	} else {
-		msg = <-r.recv
-	}
-
-	if msg == nil {
-		err = io.EOF
-	}
 	return
 }
 
 func (r *route) Write (p []byte) (n int, err error) {
 	if r.re.Match(p) {
-
-		r.Lock()
-		r.recv <-p
-		r.Unlock()
-
-		n = len(p)
+		n, err = r.in.Write(p)
+		if err == nil {
+			r.in.Flush()
+		}
 	}
-	return n, nil
-}
-
-func (r *route) Close () error {
-	close(r.recv)
-	return nil
+	return
 }
 
 type Routing struct{}
@@ -91,24 +73,32 @@ func (_ *Routing) NewRoute (pattern string, key *string) error {
 func (_ *Routing) RemoveRoute (k string, err *error) error {
 	m := <-routes
 	
-	m[k].Close()
+	m[k].in.Flush()
+	m[k].out.Close()
 	delete(m, k)
 
 	routes <-m
 	return nil
 }
 
-func (_ *Routing) RecvFrom (k string, reply *[]byte) (err error) {
+func (_ *Routing) ReadFrom (k string, reply *[]byte) error {
 
 	m := <-routes
 	route, ok := m[k]
 	routes <-m
 
-	if ok {
-		*reply, err = route.Recv()
-	} else {
-		err = fmt.Errorf("route %q does not exist", k)
+	if !ok {
+		return fmt.Errorf("no such route: %q", k)
 	}
-	return err
-}
 
+	*reply = make([]byte, 1024)
+	n, err := route.Read(*reply)
+
+	if err != nil {
+		return err
+	}
+
+	*reply = (*reply)[:n]
+
+	return nil
+}

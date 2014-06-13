@@ -21,14 +21,14 @@ func main () {
 			"USER user 0 * :real\r\n"), &n)
 
 	go func () {
-		var reply []byte
+		reply := make([]byte, 1024)
 
 		c, err := cr.NewClientRoute(con, ":[^ ]+ 001 ")
 		if err != nil {
 			log.Fatal(err)
 		}
-		
-		_, err = c.Recv(&reply)
+
+		_, err = c.Read(reply)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -37,6 +37,8 @@ func main () {
 		if err != nil {
 			log.Fatal(err)
 		}
+
+		c.Close()
 	} ()
 
 	c, err := cr.NewClientRoute(con, "^PING")
@@ -44,14 +46,14 @@ func main () {
 		log.Fatal(err)
 	}
 
-	for {
-		var reply []byte
+	reply := make([]byte, 1024)
 
-		_, err = c.Recv(&reply)
+	for {
+		_, err = c.Read(reply)
 		if err != nil {
 			log.Fatal(err)
 		}
-	
+
 		log.Println(string(reply))
 	
 		reply[1] = 'O'
